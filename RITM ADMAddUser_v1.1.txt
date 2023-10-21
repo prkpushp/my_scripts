@@ -1,0 +1,656 @@
+﻿# Name: ADMADUsers.ps1
+# Date: 17 Feb 2022
+# Version: 1.1 (4th Oct 2022)
+# Purpose: Create AD Accounts
+# 1. Create Primary ADM Account
+# 2. Create Respective _US Cyber Account
+# 3. Create Respective _EU Account
+# 4. Onboard it in CYberArk US
+# 5. Onboard respective KPS Account
+# Created by : Pushp Ranjan
+# Exit Code 1: You cancelled operation as the inputs were not verified
+# Exit code 2: Invalid reference Account
+# Exit Code 3: SImilar Account already exist
+# Exit code 4: Primary account does not get created
+# Exit code 5: _US account does not get created
+# Exit Code 6: _EU account does not get created
+# Version 1.1 Update
+#       1. Read inputs from RITM using API call
+#       2. Checks if RITM is approved, abots operation if not
+#       3. Checks if the relevant name exists 
+#       4. validate if the account got created
+#       5. Send steps to login to KPC with a document as an attachment
+#       6. send Password over email
+
+
+# Variable Declaration
+$smtpServer  = 'smtp.hosting.local' 
+$orgunit='OU=Users,OU=ADM,DC=hosting,DC=local'
+$US = "_US"
+$EU = "_EU"
+$KPS= "_KPS"
+$Users_to_Onboard = "Users-to-onboard.csv"
+$User_Data = "user-data.csv"
+$Accounts_File = "Accounts.csv"
+$safe_file = "Safe.csv"
+$ca_onboarding_fIle_path= "C:\Script"
+$script_root = (Get-Location).path 
+$current_time = get-date -format yyyy-MM-dd_HH-mm-ss
+$error_file = $script_root + "\logs" + "\ADMAccounts"+"_$current_time"+".log"
+
+#Service Now Variables
+#$user, $env = 'cloud_win_api_svc', "kronosclouddev"
+$user, $env = 'cloud_win_api_svc', "kronoscloud"
+$base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+$headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+$headers.Add('Accept','application/json')
+$headers.Add('Content-Type','application/json')
+
+function extractpwd(){
+    add-type @"
+        using System.Net;
+        using System.Security.Cryptography.X509Certificates;
+        public class TrustAllCertsPolicy_API : ICertificatePolicy {
+            public bool CheckValidationResult(
+                ServicePoint srvPoint, X509Certificate certificate,
+                WebRequest request, int certificateProblem) {
+                return true;
+            }
+        }
+"@
+    Unblock-File C:\script\CCP_WIndows.ps1
+
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy_API
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    #Write-Host "-------------------"
+    #Write-Host "------Test 1-------"
+    #Write-Host "-------------------"
+    #Write-Host "Pulling creds with spaces and custom file categories"
+
+    $baseURI = 'sbo3-sa01-pwa03.hosting.local'
+    $text = 'AppId=CredRetriever_Windows&Safe=S_KCH_Windows&Folder=Root&Username=cloud_win_api_svc&Address=kronoscloud.service-now.com'
+    $args = [uri]::EscapeUriString($text)
+    Write-host $args
+    $password = Invoke-RestMethod -Uri "https://$baseURI/AIMWebService/api/Accounts?$args" -Method Get -ContentType "application/json" 
+    $pass = $password.Content
+    return $pass
+}
+
+
+#RITM0000001 aeed229047801200e0ef563dbb9a71c2
+function readritmsysid(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/sc_req_item?sysparm_query=number%3D" + $ritm + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+    $response.result
+	$sys_id = $response.result.sys_id
+	Write-Host "$sys_id"
+	return $sys_id
+    
+}
+
+# INC0010002 25341935474011109d15cc88f36d43a3
+function readinc(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$incident = Read-Host -Prompt "Enter the INCIDENT"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/incident?sysparm_query=number%3D" + $incident + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+	$response.result
+	$sys_id = $response.result.sys_id
+	#Write-Host "$sys_id"
+	return $sys_id	
+}
+
+
+# Use Configuration item as "Cloud Placeholder" in PRD
+function createinc(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+    $short_desc = Read-Host -Prompt "Enter the Short Description"
+    $description = Read-Host -Prompt "Enter the Description"
+    $body = "{`"short_description`":`"$short_desc`",`"description`":`"$description`",`"assignment_group`":`"Cloud.Windows`",`"contact_type`":`"Case`",`"category`":`"Application`",`"subcategory`":`"KPS - Custom Executables`",`"u_product`":`"WFC`"}"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/incident?sysparm_display_value=true"
+	$method = "post"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri -Body $body
+	#$sys_id = $response.result.sys_id
+	#Write-Host "$sys_id"
+    return $response.result.number
+}
+
+# TASK0000001 dfed669047801200e0ef563dbb9a712b
+function readsctask(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$sctask = Read-Host -Prompt "Enter the SCTASK"
+	$uri = "https://" + $env + ".service-now.com/api/now/table/sc_task?sysparm_query=number%3D" + $sctask + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+    $response.result
+	$sys_id = $response.result.sys_id
+	#Write-Host "$sys_id"
+	return ,$sys_id	
+}
+
+#RITM0000001 aeed229047801200e0ef563dbb9a71c2
+function updateritm(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+    $ritm_sys_id = readritmsysid
+	$uri = "https://" + $env + ".service-now.com/api/now/table/sc_req_item/" + $ritm_sys_id
+	$method = "patch"
+	$body = "{`"work_notes`":`"The accounts $username, $username$US and $username$EU Created.`"}"
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body
+	#$response.result
+}
+
+# INC0010002 25341935474011109d15cc88f36d43a3
+function updateinc(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$inc_sys_id = readinc
+	$work_notes = Read-Host -Prompt "Enter the work notes"
+	$uri = "https://" + $env + ".service-now.com/api/now/table/incident/" + $inc_sys_id
+	$method = "patch"
+	$body = "{`"work_notes: `":`"$work_notes`"}"
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body
+	$response.result
+	Write-Host "Work notes Updated: $work_notes "
+
+}
+
+# TASK0000001 dfed669047801200e0ef563dbb9a712b
+function updatesctask(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$sctask_sys_id = readsctask
+	$work_notes = Read-Host -Prompt "Enter Work Notes"
+	$uri = "https://" + $env + ".service-now.com/api/now/table/sc_task/" + $sctask_sys_id
+	$method = "patch"
+	$body = "{`"work_notes: `":`"$work_notes`"}"
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body
+	$response.result
+	Write-Host "Work notes Updated: $work_notes "
+
+}
+
+
+# 1- New 2 - Inprogress 3 -OnHold 6- Resolved
+function closeinc(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$inc_sys_id = readinc
+	$work_notes = Read-Host -Prompt "Enter the Closing notes"
+	$uri = "https://" + $env + ".service-now.com/api/now/table/incident/" + $inc_sys_id
+	$method = "patch"
+	$body = "{`"work_notes: `":`"$work_notes`",`"state`":`"6`",`"close_notes`":`"$work_notes`",`"close_code`":`"Resolved`",`"close_notes`":`"Closed by API`"}"
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body
+	$response.result
+	Write-Host "Work notes Updated: $work_notes "
+}
+
+# Closes the SCTASK
+function closesctask(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$sctask_sys_id = readsctask
+	$work_notes = Read-Host -Prompt "Enter the Closing notes"
+	$uri = "https://" + $env + ".service-now.com/api/now/table/sc_task/" + $sctask_sys_id
+	$method = "patch"
+	$body = "{`"work_notes: `":`"$work_notes`",`"state`":`"3`"}"
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body
+	$response.result
+	Write-Host "Work notes Updated: $work_notes "
+}
+
+#Checks the RITM approval status, if not approved exits
+function checkapproval(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$ritm = Read-Host -Prompt "Enter the RITM"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/sc_req_item?sysparm_query=number%3D" + $ritm + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+	$approval = $response.result.approval
+	if ("$approval" -eq "Approved"){
+		Write-Host ("Great! This request is approved......")
+        return $ritm		
+	    }
+    else {
+        Write-Host ("Request not approved or Invalid RITM. Please get the request $ritm approved and come back again.")
+        exit 0;
+        }
+
+}
+
+#Reads the attachment file
+function readincattachment(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+    $uri = "https://"+ $env + ".service-now.com/api/now/v1/attachment?sysparm_query=table_name=incident%5Etable_sys_id=ec8ba64d1b1d95105334759d1e4bcb3f"
+    $method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+    $response.result
+}
+
+#Update the attachent of the ticket
+function updateincattachment(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+    $FileStream = curl "C:\SnowIntegration.ps1"
+    $uri = "https://kronosclouddev.service-now.com/api/now/attachment/file?table_name=incident&table_sys_id=1cb496ea1b3f49dc246b2026ec4bcbd9&file_name=sample.xml" 
+    $method = "post"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/octet-stream" -Method $method -Uri $uri 
+    $response.result
+
+   }
+ 
+ #ritmsysid 23fa7b721b4b89502ec8fc49cc4bcb99
+function getsctasks(){ #RITM0112079 5d0ca18b1bc78d50246b2026ec4bcbc4 5d0ca18b1bc78d50246b2026ec4bcbcb 150ca18b1bc78d50246b2026ec4bcbbd 150ca18b1bc78d50246b2026ec4bcbdf
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')    
+    $ritm = Read-Host -Prompt "Enter the RITM"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/sc_req_item?sysparm_query=number%3D" + $ritm + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+    #$response.result
+	$sys_id = $response.result.sys_id
+	Write-Host "$sys_id"
+    $uri = "https://"+ $env + ".service-now.com/api/now/table/sc_item_option_mtom?sysparm_limit=10&sysparm_display_value=true&sysparm_exclude_reference_link=True&sysparm_query=request_item%3D" + $sys_id
+    $method = "get"
+    $response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+    $response.result.sys_id
+}
+
+function user_info_ritm(){
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $user, $pass)))
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
+    $headers.Add('Authorization',('Basic {0}' -f $base64AuthInfo))
+    $headers.Add('Accept','application/json')
+    $headers.Add('Content-Type','application/json')
+	$uri = "https://"+ $env + ".service-now.com/api/kror/ritm_details/getRITMdetails?ritm_number=" + $ritm
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri
+    #$response.result
+	$requested_for = $response.result.requested_for
+	$email_address = $response.result.email_addr
+	$emp_id = $response.result.emp_id
+    $kps_env = $response.result.kps_enviro_access
+	#$kps_env_access
+	#$reference_account
+	#$access_start_date
+	#$acc_end_date
+	$phone_for_mfa = $response.result.adm_Number
+    $location = $response.result.location | ForEach-Object { $_.split("-")[0] }
+	$firstname = echo $requested_for | ForEach-Object { $_.split(" ")[0] }
+    $lastname = echo $requested_for | ForEach-Object { $_.split(" ")[-1] }
+    $description = $ritm
+    #echo "$firstname $lastname $email_address $emp_id $description $location $phone_for_mfa "
+    $tempsamacc = "adm$firstname.$lastname".ToLower()
+    $samaccountname =  $tempsamacc.substring(0, [System.Math]::Min(15, $tempsamacc.Length))
+    $userdetails = $samaccountname, $firstname,$lastname,$email_address,$emp_id,$description,$location,$phone_for_mfa,$kps_env
+    Write-Host "Here are the details fetched from the ticket"
+    Write-Host "############################"
+    Write-Host "SamAccountname = $samaccountname"
+    Write-Host "First Name:      $firstname"
+    Write-Host "Last Name:       $lastname"
+    Write-Host "EMail Address:   $email_address"
+    Write-Host "Employee ID:     $emp_id"
+    Write-Host "RITM Number:     $ritm"
+    Write-Host "Location:        $location"
+    Write-Host "Phone for MFA:   $phone_for_mfa"
+    Write-Host "KPS Access:      $kps_env"
+    Write-Host "############################"
+    return $userdetails
+
+}
+
+function createpassword(){
+    $password = -join ('abcdefghkmnrRSTUVWXYZ23456789$%_*#'.ToCharArray() | Get-Random -Count 20)
+    return $password
+}
+
+function sendmail_steps(){
+    $from="KCH Windows Team<kchwindowsteam@mykronos.com>"
+    $subject = "ADM Access Credentials $ritm - Created"
+    $bodymail  ="Hi $fname,
+
+    <p>As requested and approved by your manager, the provisioning of your ADM Account Account (Active directory Domain Account) is now complete.<br>
+
+    <p>ID: $username <br>
+
+    <p>Password: will be sent in a separate e-maill.<br>
+    <p>Steps attached to log into the KPC Windows environment.<br>
+
+    <p>Thanks <br>
+
+    <p>Cloud Windows Team<br>
+    "
+    Write-Host "Sending How to Document to user  "
+    Send-Mailmessage -smtpServer $smtpServer -from $from -to $email -subject $subject -Attachments 'C:\script\How to login to KPC environment.pdf' -body $bodymail -bodyasHTML -priority High
+}
+
+function sendpasswd(){
+    $from="KCH Windows Team<kchwindowsteam@mykronos.com>"
+    $subject = "ADM Access Credentials $ritm - Password"
+    $bodypassword = "Hi $fname,<br>
+
+    <p>Your AD Domain account password is: $usrpasswd<br>
+    <p>Please permanently delete this email immediately after securing the received password<br>
+    <p>Thanks<br>
+    <p>Cloud Windows Team<br>"
+    Write-Host "Sending Password to the user...."
+
+    Send-Mailmessage -smtpServer $smtpServer -from $from -to $email -subject $subject -body $bodypassword -bodyasHTML -priority High
+}
+
+function check_account($account){
+    if (@(([ADSISearcher] "(SAMAccountName=$account)").FindOne())) 
+        {
+            echo "Account $account already exists, Skipping....."
+        } 
+        else 
+        { 
+            echo "Creating $account Account...."
+        }
+}
+
+function create_primary(){
+    #Write-Host "New-ADUser -Name "ADM $fname $lname" -GivenName "ADM $fname" -Surname $lname -SamAccountName $username -UserPrincipalName $username@hosting.local -employeeID $empid -MobilePhone $mobilenumber -EmailAddress $email -Description "Administrative Account for ADM Team - Access Request $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru"
+    New-ADUser -Name "ADM $fname $lname" -GivenName "ADM $fname" -Surname $lname -SamAccountName $username -UserPrincipalName $username@hosting.local -employeeID $empid -MobilePhone $mobilenumber -EmailAddress $email -Description "Administrative Account for ADM Team - Access Request $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru
+    sleep 1
+    #Write-Host "Get-ADUser -Identity $referenceuser -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username"
+    Get-ADUser -Identity $referenceuser -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username
+
+}
+
+function create_US(){
+    #Write-Host "New-ADUser -Name "ADM $fname $lname$US" -GivenName "ADM $fname" -Surname "$lname$US" -SamAccountName $username$US -UserPrincipalName $username$US@hosting.local -employeeID $empid -MobilePhone $mobilenumber -Description "CyberArk Administrative Account for ADM Team - US $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru"
+    New-ADUser -Name "ADM $fname $lname$US" -GivenName "ADM $fname" -Surname "$lname$US" -SamAccountName $username$US -UserPrincipalName $username$US@hosting.local -employeeID $empid -MobilePhone $mobilenumber -Description "CyberArk Administrative Account for ADM Team - US $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru
+    sleep 1
+    #Write-Host "Get-ADUser -Identity $referenceuser$US -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username$US"
+    Get-ADUser -Identity $referenceuser$US -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username$US
+    
+}
+
+function create_EU(){
+    #Write-Host "New-ADUser -Name "ADM $fname $lname$EU" -GivenName "ADM $fname" -Surname "$lname$EU" -SamAccountName $username$EU -UserPrincipalName $username$EU@hosting.local -employeeID $empid -MobilePhone $mobilenumber -Description "CyberArk Administrative Account for ADM Team - EU $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru"
+    New-ADUser -Name "ADM $fname $lname$EU" -GivenName "ADM $fname" -Surname "$lname$EU" -SamAccountName $username$EU -UserPrincipalName $username$EU@hosting.local -employeeID $empid -MobilePhone $mobilenumber -Description "CyberArk Administrative Account for ADM Team - EU $ritm" -Enabled $true -path $orgunit -ChangePasswordAtLogon $true -AccountPassword (ConvertTo-SecureString "$usrpasswd" -AsPlainText -force) -passThru
+    sleep 1
+    #Write-Host "Get-ADUser -Identity $referenceuser$EU -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username$EU"
+    Get-ADUser -Identity $referenceuser$EU -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members $username$EU
+}
+
+function create_accounts(){ #Created ADM accounts(Primary,_US, _EU)
+    if (@(([ADSISearcher] "(SAMAccountName=$username)").FindOne())) 
+        {
+            echo "Account $username already exists, Skipping....."
+        } 
+        else 
+        { 
+            echo "Creating $username Account...."
+            create_primary
+        }
+     if (@(([ADSISearcher] "(SAMAccountName=$username$US)").FindOne())) 
+        {
+            echo "Account $username$US already exists, Skipping....."
+        } 
+        else 
+        { 
+            echo "Creating $username$US Account...."
+            create_US
+        }
+     if (@(([ADSISearcher] "(SAMAccountName=$username$EU)").FindOne())) 
+        {
+            echo "Account $username$EU already exists, Skipping....."
+        } 
+        else 
+        { 
+            echo "Creating $username$EU Account...."
+            create_EU
+        }
+    
+    }
+
+function create_phone(){
+    if ($location -eq 'IN'){
+            $InString = $phone
+            $OutPattern = '011 91 (###) ###-####'
+            $OutString = "{0:$OutPattern}" -f [int64]($InString.Trim('+'))
+            return $OutString
+       }
+     if ($location -eq 'US'){
+            $InString = $phone
+            $OutPattern = '(###) ###-####'
+            $OutString = "{0:$OutPattern}" -f [int64]($InString.Trim('+'))
+            return $OutString
+       } 
+     if ($location -eq 'Virtual'){
+            $InString = $phone
+            $OutPattern = '(###) ###-####'
+            $OutString = "{0:$OutPattern}" -f [int64]($InString.Trim('+'))
+            return $OutString
+       }
+      else {
+            $InString = $phone
+            $OutPattern = '(###) ###-####'
+            $OutString = "{0:$OutPattern}" -f [int64]($InString.Trim('+'))
+            return $OutString
+      }
+       
+}
+
+function create-csv-files {
+    New-Item $Users_to_Onboard -ItemType file -force
+    Add-Content $Users_to_Onboard -Value '"name","userlogon","OnboardAccount","EMPID","AccountType","Password"'
+    "{0},{1},{2},{3},{4},{5}" -f "ADM $fname $lname","$username","$username$US","$empid","ADM","$usrpasswd" | Add-Content -path $Users_to_Onboard
+    New-Item $safe_file -ItemType file -force
+    Add-Content $safe_file -Value '"SafeName","Description","CPM","User"'
+    "{0},{1},{2},{3}" -f "U_$empid$KPS","ADM $fname $lname KPS Safe","PasswordMgr_KPS","$username" | Add-Content -Path $safe_file
+    New-Item $Accounts_File -ItemType file -force
+    Add-Content $Accounts_File -Value '"Safename","UserAccount","Password","PlatformID","address"'
+    "{0},{1},{2},{3},{4}" -f "U_$empid$KPS","$username$KPS","$usrpasswd","KPS_WInDOM","kps.hosting.local" | Add-Content -Path $Accounts_File
+
+}
+
+#KPC US Onboarding
+function onboard-us() {
+.\CyberArk_Account_Onboarding_Updated.ps1 
+}
+
+#KPS Onboarding
+function onboard-kps() {
+
+.\1-KPS_CyberArk+Safe+Member.ps1
+sleep 120
+.\2-Add-Account.ps1
+
+}
+
+function validate-input() {
+    Write-Host "`nPlease verify the inputs fetched`n`n"
+    $YESNO = Read-Host -Prompt "Press Y to continue or any other key to Cancel"
+    if ( $YESNO -ieq "Y" ) {
+    Write-Host " "
+    }
+    else {
+    Write-Host "You cancelled the execution. Run the script again if you really need to."
+    exit 1
+    }
+}
+
+function referenceaccount() {
+    $reference = Read-Host -Prompt "Enter Reference Account to replicate the permission "
+    if (@(([ADSISearcher] "(SAMAccountName=$reference)").FindOne())) 
+        {
+            return $reference
+        } 
+        else 
+        { 
+            echo "Invalid reference acccount input $reference ...., try again."
+            exit 2
+            
+        }
+    }
+
+function checkemployeeid(){
+    $a123 = get-ADUser -Filter "employeeID -eq '$empid'" | Select -ExpandProperty Name
+    if ($a123){
+        Write-Host "############################"
+        echo $a123
+        $YESNO = Read-Host -Prompt  "The above account(s) ALREADY EXISTS. Do you still want to continue(Y/N)"
+        if ( $YESNO -ieq "Y" ) {
+            echo "Proceeding further as per your confirmation"
+        }
+        else {
+            Write-Host "You cancelled the execution as the account already exists. Run the script again."
+            exit 3
+        }
+
+    }
+}
+
+function create_adm_acc(){
+    cd C:\Script
+    $mobilenumber = create_phone
+    create_accounts
+    create-csv-files
+    echo "Onboarding _US account...."
+    onboard-us
+    if ( $kps_env -ieq "Yes" ) {
+        echo "Onboarding KPS account...."
+        onboard-kps
+        
+    }
+}
+
+function check_acc_created(){
+     if (@(([ADSISearcher] "(SAMAccountName=$username)").FindOne())){
+            echo "Validating $username,  it exists..."
+                 if (@(([ADSISearcher] "(SAMAccountName=$username$US)").FindOne())){
+                    Write-Host  "Validating $username$US,  it exists..."
+                    if (@(([ADSISearcher] "(SAMAccountName=$username$US)").FindOne())){
+                        echo "Validating $username$EU,  it exists..."
+                    }
+                    else {
+                        Write-Host "Looks like account $username$EU does not get created. Credentials not sent. Aborting.."
+                        exit 6
+                        
+                    }
+                 }
+                 else {
+                    Write-Host "Looks like account $username$US does not get created. Credentials not sent. Aborting.."
+                    exit 5
+                }
+       }
+       else {
+           Write-Host "Looks like account $username does not get created. Credentials not sent. Aborting.."
+           exit 4
+    }
+}
+
+function checkapproval5(){
+	#$ritm = Read-Host -Prompt "Enter the RITM"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/sc_req_item?sysparm_query=number%3D" + "RITM0129274" + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+	$approval = $response.result.approval
+	if ("$approval" -eq "Approved"){
+		#Write-Host ("Great! This request is approved......")
+        #return $ritm		
+	    }
+    else {
+        #Write-Host ("Request not approved or Invalid RITM. Please get the request $ritm approved and come back again.")
+        exit 0;
+        }
+
+}
+
+function checkapproval100(){
+	#$ritm = Read-Host -Prompt "Enter the RITM"
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/sc_req_item?sysparm_query=number%3D" + "RITM0129274" + "&sysparm_display_value=true&sysparm_limit=1"
+	$method = "get"
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri 
+	$approval = $response.result.approval
+
+
+}
+#Main Proggie
+
+function admadduserv1.1(){
+    $pass = extractpwd                #Extract API Password
+    $ritm = checkapproval            #Checks for approval if approved, returns RITM
+    $a = user_info_ritm               #Extract User info
+    $username,$fname,$lname, $email, $empid, $description, $location, $phone, $kps_env = $($a[0],$a[1],$a[2],$a[3],$a[4],$a[5],$a[6],$a[7],$a[8])
+    checkemployeeid                   #Check if the related accounts exists
+    $usrpasswd = createpassword       #Create custom password
+    #$username = "test"
+    validate-input                    #Validate User details fetched from Ticket
+    $referenceuser = referenceaccount #Get reference user and validates as well
+    create_adm_acc                    #Create accounts(Primary, EU, US, onboard _US, skips already created accounts NOT _EU)
+    check_acc_created                 #Validates the users created, abort the script if not created
+    updateritm                        #Updates the Account creation details in RITM
+    sendmail_steps                    #Sends the steps to get into KPC Environment
+    sendpasswd                        #Sends Password
+    Write-Host "############################################"
+    Write-Host ""
+    Write-HOst "Please do EU Onboarding from FR4 Jumphost"
+    Write-Host "" 
+    Write-Host "############################################"
+}
+#Start-Transcript -Path $error_file -NoClobber
+$pass = extractpwd
+#$hello = checkapproval100
+#echo hello
+#$randomValue = checkapproval5
+#echo hello2
+admadduserv1.1
+#Stop-Transcript
+
+
+
+#$pass = extractpwd
+#checkapproval

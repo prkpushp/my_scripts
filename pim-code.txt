@@ -1,0 +1,69 @@
+function extractpwd(){
+$drive="c:\"
+$passwordfile = "C:\Scripts\Windows\getpim.txt"
+#$url = "https://10.239.255.241/BeyondTrust/api/public/v3/";
+$url =  "https://oss01pim01-2-vm.oss.mykronos.com/BeyondTrust/api/public/v3/"
+$apiKey = Get-Content "C:\scripts\Windows\PIM_API_DO_NOT_DELETE\apikey.txt"
+$runAsUser = "koss-win"
+
+
+$workgroupName = "BeyondTrust Workgroup";
+$conflictOption="reuse"
+$verbose = $True;
+$time = "1";
+
+
+
+if (-not ([System.Management.Automation.PSTypeName]"TrustAllCertsPolicy").Type)
+{
+    Add-Type -TypeDefinition  @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(
+        ServicePoint srvPoint, X509Certificate certificate,
+        WebRequest request, int certificateProblem)
+    {
+        return true;
+    }
+}
+"@
+}
+
+if ([System.Net.ServicePointManager]::CertificatePolicy.ToString() -ne "TrustAllCertsPolicy")
+{
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+}
+
+
+
+
+# Sign-In
+     if ($verbose) { "Signing-in.. POST ${url}Auth/SignAppIn"; }
+     $signInResult = Invoke-RestMethod -Uri "${url}Auth/SignAppIn" -Method POST -Headers @{ Authorization="PS-Auth key=${apiKey}; runas=${runAsUser};"; } -SessionVariable session;
+     if ($verbose) { "..Signed-in as {0}" -f $signInResult.UserName; }
+
+
+
+
+# Load data
+     if ($verbose) { "Loading.. ${passwordfile}"; }
+     $csvdata = Import-Csv "${passwordfile}";
+     if ($verbose) { "..Loaded {0} entries" -f $csvdata.Count; }
+# Start data loop          
+     Foreach ($newaccount in $csvdata) {
+             $systemName = $newaccount.system
+             $accountName = $newaccount.username
+# Get Password
+
+
+
+$getMa = Invoke-RestMethod -Uri "${url}ManagedAccounts?systemName=$systemName&accountName=$accountName" -Method GET -Headers $headers123 -WebSession $session
+$pwdRequest = Invoke-RestMethod -Uri "${url}Requests" -Method POST -Headers $headers123 -WebSession $session -Body @{"SystemId"=$getMa.SystemId;"AccountId"=$getMa.AccountId;"DurationMinutes"=$time;"ConflictOption"=$conflictOption}
+$pwd = Invoke-RestMethod -Uri "${url}Credentials/$pwdRequest" -Method GET -Headers $headers123 -WebSession $session -Body @{"AccountId"=$getMa.AccountId;"RequestId"=$pwdRequest}
+return $pwd
+}
+}
+
+$pass = (extractpwd)[-1]
+echo $pass

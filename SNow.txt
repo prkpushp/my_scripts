@@ -1,0 +1,10 @@
+
+Username: admin
+Current password: fP17YxtBTtbA
+
+https://dev58150.service-now.com
+
+
+APIs:
+RITM
+https://dev85344.service-now.com/api/now/table/sc_req_item?sysparm_display_value=number%3DRITM0000001&sysparm_display_value=true&sysparm_fields=state%2Csys_id%2Ccat_item%2Cstage&sysparm_limit=10

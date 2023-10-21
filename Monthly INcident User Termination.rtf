@@ -1,0 +1,184 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 ##############\
+#Name : delete_ad_users_90_days\
+#Version : 1.0\
+#Purpose : This will delete the users disabled for 90 days or more\
+#Author: Pushp Ranjan Karn\
+#################\
+#Variables\
+#$user, $env = 'cloud_win_api_svc',  "kronosclouddev"\
+$user, $env = 'cloud_win_api_svc', "kronoscloud"\
+$disableduserspath = "C:\\temp\\disabled_Users_90days.csv"\
+$smtpServer="koss01-oss01-mta01-app.int.oss.mykronos.com"\
+$from="KCH Windows Team<kchwindows@mykronos.com>"\
+#$communication = "pushparanjan.karn@ukg.com"\
+$communication = "securitymonitoring@ukg.com","kchwindowsteam@ukg.com"\
+$CC= "pushparanjan.karn@ukg.com"\
+$snowemail = "kronoscloud@service-now.com","securitymonitoring@ukg.com"\
+#$snowemail = "kronosclouddev@service-now.com"\
+$a = get-content "C:\\temp\\disabled_Users_90days.csv"\
+$NOW = get-date\
+$LOG_DIRECTORY = "C:\\scripts\\logs\\"\
+$LOG = $LOG_DIRECTORY + "delete_ad_users_" + $NOW.ToString("yyyy-MM-dd_HH-mm-ss") + ".log"\
+\
+\
+$base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("\{0\}:\{1\}" -f $user, $pass)))\
+$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"\
+$headers.Add('Authorization',('Basic \{0\}' -f $base64AuthInfo))\
+$headers.Add('Accept','application/json')\
+$headers.Add('Content-Type','application/json')\
+\
+$ticketbody = "\
+Hi Team, \
+<p>There was some issues with disabling the account in the subject line. <br> \
+<p>Please check it manually. <br> \
+<p>Route this ticket to cloud.windows queue. <br>\
+\
+<br>\
+<p><br>Regards, <br>\
+</P>Cloud Windows Team"\
+\
+function createinc()\{\
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("\{0\}:\{1\}" -f $user, $pass)))\
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"\
+    $headers.Add('Authorization',('Basic \{0\}' -f $base64AuthInfo))\
+    $headers.Add('Accept','application/json')\
+    $headers.Add('Content-Type','application/json')\
+    $short_desc = "Delete Disabled AD accounts for more than 90 days"\
+    $description = "Delete Disabled AD accounts for more than 90 days"\
+    #$body = "\{`"short_description`":`"$short_desc`",`"description`":`"$description`",`"assignment_group`":`"Cloud.Windows`",`"contact_type`":`"Case`",`"category`":`"Application`",`"subcategory`":`"KPS - Custom Executables`",`"u_product`":`"WFC`"\}"\
+	$body = "\{`"short_description`":`"$short_desc`",`"description`":`"$description`",`"assignment_group`":`"Cloud.Windows`",`"contact_type`":`"Case`",`"category`":`"OSS`",`"assigned_to`":`"Pushpa Ranjan Karn`",`"cmdb_ci`":`"Cloud Placeholder`",`"subcategory`":`"Infrastructure Directory Service`",`"u_product`":`"WFR-Infrastructure`"\}"\
+    $uri = "https://"+ $env + ".service-now.com/api/now/table/incident?sysparm_display_value=true"\
+	$method = "post"\
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri -Body $body\
+	#$sys_id = $response.result.sys_id\
+	#Write-Host "$sys_id"\
+    return $response.result.number\
+\}\
+\
+#Get Disabled users for more than 90 days\
+function get_disabled_user()\{\
+    $3Months = (get-date).AddDays(-90)\
+    $users=Get-ADUser  -SearchBase "OU=User_Objects,OU=Inactive_Accounts,DC=WIN,DC=mykronos,DC=com" -properties * -filter \{((modifyTimeStamp -le $3Months) -AND (enabled -eq $False))\} | Select-Object Name,SAMaccountname,Enabled  | export-csv $disableduserspath -notypeinformation\
+    notepad $disableduserspath\
+\}\
+\
+\
+#This function deletes the user and updates the ticket\
+function delete_user()\{\
+    $allusers = Import-Csv $disableduserspath\
+    foreach ($user in $allusers)\{\
+        $samaccountname = $user.SAMaccountname\
+        echo $samaccountname\
+        Remove-ADUser -Identity $samaccountname -Confirm:$False\
+        #updateincuser\
+        if($?)\{\
+            Write-Host "User $samaccountname deleted"\
+        \}\
+        else\{\
+            Write-Host "Cannot delete the AD account $samaccountname"\
+            Send-MailMessage -to $snowemail -Cc $CC -smtpserver $smtpServer -Priority  "Normal" -from $from -subject "Cannot delete the AD account $samaccountname" -body $ticketbody -bodyasHTML;\
+        \}\
+    \}\
+\}\
+\
+function readinc()\{\
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("\{0\}:\{1\}" -f $user, $pass)))\
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"\
+    $headers.Add('Authorization',('Basic \{0\}' -f $base64AuthInfo))\
+    $headers.Add('Accept','application/json')\
+    $headers.Add('Content-Type','application/json')\
+	$uri = "https://"+ $env + ".service-now.com/api/now/table/incident?sysparm_query=number%3D" + $incident + "&sysparm_display_value=true&sysparm_limit=1"\
+	$method = "get"\
+	$response = Invoke-RestMethod -Headers $headers -ContentType "application/json" -Method $method -Uri $uri \
+	#$response.result\
+	$sys_id = $response.result.sys_id\
+	return $sys_id	\
+\}\
+\
+function updateincattchmt()\{\
+    $inc_sys_id = readinc\
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("\{0\}:\{1\}" -f $user, $pass)))\
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"\
+    $headers.Add('Authorization',('Basic \{0\}' -f $base64AuthInfo))\
+    $headers.Add('Accept','application/json')\
+    $headers.Add('Content-Type','application/json')\
+    $attachUri = "https://"+ $env + ".service-now.com/api/now/attachment/file?table_name=incident&table_sys_id=" + $inc_sys_id + "&file_name=" + $disableduserspath\
+    echo $attachUri\
+    $upload= Invoke-RestMethod -Headers $headers -Uri $attachUri -Method Post -InFile $disableduserspath -ContentType 'multipart/form-data'\
+\}\
+\
+#Updates the user disablement on ServiceNow\
+function updateincuser()\{\
+	$inc_sys_id = readinc\
+    echo $inc_sys_id\
+    $uri = "https://" + $env + ".service-now.com/api/now/table/incident/" + $inc_sys_id\
+	$method = "patch"\
+	#$body = "\{`"work_notes: `":`"$work_notes`"\}"\
+    $body = "\{`"work_notes`":`"The useraccount $samaccountname has been deleted from WFR AD.`"\}"\
+    echo $body\
+    #echo $uri\
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body\
+	#$response.result\
+\
+\}\
+\
+function closeinc()\{\
+	$inc_sys_id = readinc\
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("\{0\}:\{1\}" -f $user, $pass)))\
+    $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"\
+    $headers.Add('Authorization',('Basic \{0\}' -f $base64AuthInfo))\
+    $headers.Add('Accept','application/json')\
+    $headers.Add('Content-Type','application/json')\
+	$uri = "https://" + $env + ".service-now.com/api/now/table/incident/" + $inc_sys_id\
+	$method = "patch"\
+	$body = "\{`"work_notes: `":`"Closing ticket`",`"state`":`"6`",`"close_code`":`"Resolved`",`"close_notes`":`"All users in the attached sheet have been deleted from AD`"\}"\
+	$response = Invoke-RestMethod -Headers $headers -Method $method -Uri $uri -Body $body\
+	#$response.result\
+\}\
+\
+function validateandmail()\{\
+    $emailbody = "\
+    Hi All, \
+    <p>The disabled AD users that were kept disabled for more than 90 days  have been removed from the AD.<br> \
+    <p>A ticket $incident has already been raised against this and closed as well.<br> \
+    <p>Please log a ticket to Windows Team in case of issues.<br>\
+    <br>\
+    <p><br>Regards, <br>\
+    </P>Cloud Windows Team"\
+    Send-MailMessage -to $communication -Cc $CC -smtpserver $smtpServer -Priority  "Normal" -Attachments $disableduserspath -from $from -subject "WFR AD Users disabled for 90 days have been removed )" -body $emailbody -bodyasHTML;\
+\
+\}\
+\
+function testmail()\{\
+\
+Send-Mailmessage -smtpServer $smtpServer -from "testdisabledelete@kronos.net" -to $CC -subject "Test Mail for delete/disable" -body "pass" -bodyasHTML -priority High\
+\}\
+\
+\
+#Main Proggie\
+function execute()\{\
+    $pass =  C:\\scripts\\Windows\\code.ps1\
+    $incident = createinc #Creates an Incident\
+    echo $incident\
+    get_disabled_user     #Get List of Disabled Users\
+    updateincattchmt      #Update the disabled users list to ticket\
+    delete_user           #Delete the USer \
+    validateandmail       #Validate the Users deleted and send communication email\
+    closeinc              #Close the incident\
+\}\
+\
+\
+Start-Transcript -Path $LOG -NoClobber\
+execute\
+#testmail\
+Stop-Transcript\
+\
+\
+#get_disabled_user}

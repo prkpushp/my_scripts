@@ -1,0 +1,44 @@
+Aashish Saini aashish.saini@ukg.com 45271 AS45271
+Ankit Srivastava ankit.srivastava@ukg.com 42954 AS42954
+Anmol Sharma anmol.sharma@ukg.com 41899AS41899
+Himanshu Sharma himanshu.sharma@ukg.com 43534 HS43534
+Pranshu Pandey pranshu.pandey@ukg.com 38881 PP38881
+RahulK Kumar rahul.k.kumar@ukg.com 41898 RK41898
+Shahid Ahmad shahid.ahmed@ukg.com 43911 SA43911
+Tanyam Sharma tanyam.sharma@ukg.com 39582 TS39582
+Utsav Dixit utsav.dixit@ukg.com 44809 UD44809
+Vibhor Naushran vibhor.naushran@ukg.com 41845 VN41845
+Mayank Anand mayank.anand@ukg.com 38502 MA38502
+Sachin Nagar sachin.nagar@ukg.com 38489 SN38489
+Saurabh Verma saurabh.verma@ukg.com 49530 SV49530
+
+
+New-ADUser -Name "Aashish Saini" -GivenName Aashish -Surname Saini -SamAccountName AS45271 -UserPrincipalName AS45271@win.mykronos.com -employeeID 45271 -emailAddress aashish.saini@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members AS45271
+
+New-ADUser -Name "Ankit Srivastava" -GivenName Ankit -Surname Srivastava -SamAccountName AS42954 -UserPrincipalName AS42954@win.mykronos.com -employeeID 42954 -emailAddress ankit.srivastava@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Anmol Sharma" -GivenName Anmol -Surname Sharma -SamAccountName AS41899 -UserPrincipalName AS41899@win.mykronos.com -employeeID 41899 -emailAddress anmol.sharma@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Himanshu Sharma" -GivenName Himanshu -Surname Sharma -SamAccountName HS43534 -UserPrincipalName HS43534@win.mykronos.com -employeeID 43534 -emailAddress himanshu.sharma@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Pranshu Pandey" -GivenName Pranshu -Surname Pandey -SamAccountName PP38881 -UserPrincipalName PP38881@win.mykronos.com -employeeID 38881 -emailAddress pranshu.pandey@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "RahulK Kumar" -GivenName RahulK -Surname Kumar -SamAccountName RK41898 -UserPrincipalName RK41898@win.mykronos.com -employeeID 41898 -emailAddress rahul.k.kumar@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Shahid Ahmad" -GivenName Shahid -Surname Ahmad -SamAccountName SA43911 -UserPrincipalName SA43911@win.mykronos.com -employeeID 43911 -emailAddress shahid.ahmed@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Tanyam Sharma" -GivenName Tanyam -Surname Sharma -SamAccountName TS39582 -UserPrincipalName TS39582@win.mykronos.com -employeeID 39582 -emailAddress tanyam.sharma@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Utsav Dixit" -GivenName Utsav -Surname Dixit -SamAccountName UD44809 -UserPrincipalName UD44809@win.mykronos.com -employeeID 44809 -emailAddress utsav.dixit@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Vibhor Naushran" -GivenName Vibhor -Surname Naushran -SamAccountName VN41845 -UserPrincipalName VN41845@win.mykronos.com -employeeID 41845 -emailAddress vibhor.naushran@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Mayank Anand" -GivenName Mayank -Surname Anand -SamAccountName MA38502 -UserPrincipalName MA38502@win.mykronos.com -employeeID 38502 -emailAddress mayank.anand@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Sachin Nagar" -GivenName Sachin -Surname Nagar -SamAccountName SN38489 -UserPrincipalName SN38489@win.mykronos.com -employeeID 38489 -emailAddress sachin.nagar@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+New-ADUser -Name "Saurabh Verma" -GivenName Saurabh -Surname Verma -SamAccountName SV49530 -UserPrincipalName SV49530@win.mykronos.com -employeeID 49530 -emailAddress saurabh.verma@ukg.com -Description "Cloud Engineer" -Enabled  $true -path "$ORG_UNIT" -ChangePasswordAtLogon $false  -AccountPassword (ConvertTo-SecureString "$PASSWD" -AsPlainText -force) -passThru
+
+
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members AS42954
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members AS41899
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members HS43534
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members PP38881
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members RK41898
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members SA43911
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members TS39582
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members UD44809
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members VN41845
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members MA38502
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members SN38489
+Get-ADUser -Identity FK31928 -Properties Memberof | Select-Object -ExpandProperty memberof | Add-ADGroupMember -Members SV49530
